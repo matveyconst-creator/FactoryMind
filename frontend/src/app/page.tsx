@@ -12,11 +12,28 @@ type UploadResult = {
   message: string;
 };
 
+type AskResult = {
+  question: string;
+  answer: string;
+  filename: string;
+  sources: {
+    chunk_index: number;
+    similarity: number;
+    text: string;
+  }[];
+};
+
 export default function Home() {
   const [backendOnline, setBackendOnline] = useState<boolean | null>(null);
+
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadResult, setUploadResult] = useState<UploadResult | null>(null);
   const [uploading, setUploading] = useState(false);
+
+  const [question, setQuestion] = useState("");
+  const [askResult, setAskResult] = useState<AskResult | null>(null);
+  const [asking, setAsking] = useState(false);
+
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -45,6 +62,8 @@ export default function Home() {
 
     setUploading(true);
     setUploadResult(null);
+    setAskResult(null);
+    setQuestion("");
     setError(null);
 
     const formData = new FormData();
@@ -77,6 +96,50 @@ export default function Home() {
     }
   }
 
+  async function askQuestion() {
+    if (!question.trim()) {
+      return;
+    }
+
+    setAsking(true);
+    setAskResult(null);
+    setError(null);
+
+    try {
+      const response = await fetch(
+        "http://127.0.0.1:8000/documents/ask",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            question,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+
+        throw new Error(
+          errorData.detail ?? "Question request failed"
+        );
+      }
+
+      const data = await response.json();
+      setAskResult(data);
+    } catch (err) {
+      if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError("Question request failed");
+      }
+    } finally {
+      setAsking(false);
+    }
+  }
+
   return (
     <main className="min-h-screen bg-zinc-950 text-white">
       <div className="mx-auto max-w-6xl px-8 py-20">
@@ -95,15 +158,21 @@ export default function Home() {
 
         <div className="mt-8">
           {backendOnline === null && (
-            <p className="text-zinc-400">Checking backend...</p>
+            <p className="text-zinc-400">
+              Checking backend...
+            </p>
           )}
 
           {backendOnline === true && (
-            <p className="text-green-400">● Backend Online</p>
+            <p className="text-green-400">
+              ● Backend Online
+            </p>
           )}
 
           {backendOnline === false && (
-            <p className="text-red-400">● Backend Offline</p>
+            <p className="text-red-400">
+              ● Backend Offline
+            </p>
           )}
         </div>
 
@@ -121,8 +190,13 @@ export default function Home() {
             type="file"
             accept="application/pdf"
             onChange={(event) => {
-              setSelectedFile(event.target.files?.[0] ?? null);
+              setSelectedFile(
+                event.target.files?.[0] ?? null
+              );
+
               setUploadResult(null);
+              setAskResult(null);
+              setQuestion("");
               setError(null);
             }}
           />
@@ -150,7 +224,8 @@ export default function Home() {
 
                 <div className="mt-4 space-y-1 text-sm text-zinc-300">
                   <p>
-                    <strong>File:</strong> {uploadResult.filename}
+                    <strong>File:</strong>{" "}
+                    {uploadResult.filename}
                   </p>
 
                   <p>
@@ -159,7 +234,8 @@ export default function Home() {
                   </p>
 
                   <p>
-                    <strong>Pages:</strong> {uploadResult.page_count}
+                    <strong>Pages:</strong>{" "}
+                    {uploadResult.page_count}
                   </p>
 
                   <p>
@@ -179,9 +255,75 @@ export default function Home() {
                 </h3>
 
                 <div className="max-h-80 overflow-y-auto whitespace-pre-wrap rounded-lg border border-zinc-800 bg-zinc-900 p-5 text-sm leading-6 text-zinc-300">
-                  {uploadResult.text_preview || "No text could be extracted."}
+                  {uploadResult.text_preview ||
+                    "No text could be extracted."}
                 </div>
               </div>
+
+              <div className="border-t border-zinc-800 pt-6">
+                <h3 className="text-xl font-semibold">
+                  Ask FactoryMind
+                </h3>
+
+                <p className="mt-2 text-sm text-zinc-400">
+                  Ask a question about the uploaded document.
+                </p>
+
+                <textarea
+                  className="mt-4 min-h-28 w-full rounded-lg border border-zinc-800 bg-zinc-900 p-4 text-sm text-white outline-none placeholder:text-zinc-500 focus:border-zinc-600"
+                  placeholder="What packages should I import?"
+                  value={question}
+                  onChange={(event) =>
+                    setQuestion(event.target.value)
+                  }
+                />
+
+                <button
+                  className="mt-4 rounded-lg bg-blue-500 px-5 py-3 font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  onClick={askQuestion}
+                  disabled={!question.trim() || asking}
+                >
+                  {asking ? "Thinking..." : "Ask Question"}
+                </button>
+              </div>
+
+              {askResult && (
+                <div className="space-y-4 rounded-lg border border-zinc-800 bg-zinc-900 p-5">
+                  <h3 className="text-lg font-semibold">
+                    Answer
+                  </h3>
+
+                  <div className="whitespace-pre-wrap text-sm leading-6 text-zinc-200">
+                    {askResult.answer}
+                  </div>
+
+                  <details className="pt-2">
+                    <summary className="cursor-pointer text-sm text-zinc-400">
+                      Show sources
+                    </summary>
+
+                    <div className="mt-4 space-y-4">
+                      {askResult.sources.map(
+                        (source, index) => (
+                          <div
+                            key={index}
+                            className="rounded-lg border border-zinc-800 p-4"
+                          >
+                            <p className="text-xs text-zinc-500">
+                              Chunk {source.chunk_index} · Similarity{" "}
+                              {source.similarity.toFixed(3)}
+                            </p>
+
+                            <p className="mt-2 whitespace-pre-wrap text-sm text-zinc-300">
+                              {source.text}
+                            </p>
+                          </div>
+                        )
+                      )}
+                    </div>
+                  </details>
+                </div>
+              )}
             </div>
           )}
         </section>
