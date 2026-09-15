@@ -18,6 +18,7 @@ type AskResult = {
   filename: string;
   sources: {
     chunk_index: number;
+    page: number;
     similarity: number;
     text: string;
   }[];
@@ -297,31 +298,30 @@ export default function Home() {
                     {askResult.answer}
                   </div>
 
+                  {askResult.sources.length > 0 && (
                   <details className="pt-2">
                     <summary className="cursor-pointer text-sm text-zinc-400">
                       Show sources
                     </summary>
 
                     <div className="mt-4 space-y-4">
-                      {askResult.sources.map(
-                        (source, index) => (
-                          <div
-                            key={index}
-                            className="rounded-lg border border-zinc-800 p-4"
-                          >
-                            <p className="text-xs text-zinc-500">
-                              Chunk {source.chunk_index} · Similarity{" "}
-                              {source.similarity.toFixed(3)}
-                            </p>
+                      {askResult.sources.map((source, index) => (
+                        <div
+                          key={index}
+                          className="rounded-lg border border-zinc-800 p-4"
+                        >
+                          <p className="text-sm font-medium text-blue-400">
+                            {askResult.filename} · Page {source.page}
+                          </p>
 
-                            <p className="mt-2 whitespace-pre-wrap text-sm text-zinc-300">
-                              {source.text}
-                            </p>
-                          </div>
-                        )
-                      )}
+                          <p className="mt-2 whitespace-pre-wrap text-sm text-zinc-300">
+                            {source.text}
+                          </p>
+                        </div>
+                      ))}
                     </div>
                   </details>
+                )}
                 </div>
               )}
             </div>

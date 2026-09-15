@@ -30,6 +30,7 @@ embedding_model = SentenceTransformer(
 document_store = {
     "filename": None,
     "chunks": [],
+    "chunk_metadata": [],
     "embeddings": None,
 }
 
@@ -98,13 +99,27 @@ async def upload_document(file: UploadFile = File(...)):
             })
 
         full_text = "\n".join(page["text"] for page in pages)
-        chunks = split_text_into_chunks(full_text)
+
+        chunks = []
+        chunk_metadata = []
+
+        for page in pages:
+            page_chunks = split_text_into_chunks(page["text"])
+
+            for chunk in page_chunks:
+                chunks.append(chunk)
+
+                chunk_metadata.append({
+                    "page": page["page"]
+                })
+
         embeddings = embedding_model.encode(
             chunks,
             normalize_embeddings=True,
         )
         document_store["filename"] = file.filename
         document_store["chunks"] = chunks
+        document_store["chunk_metadata"] = chunk_metadata
         document_store["embeddings"] = embeddings
         result = {
             "filename": file.filename,
@@ -171,6 +186,7 @@ def search_document(request: SearchRequest):
     for index in top_indices:
         results.append({
             "chunk_index": int(index),
+            "page": document_store["chunk_metadata"][index]["page"],
             "similarity": float(similarities[index]),
             "text": document_store["chunks"][index],
         })
@@ -201,14 +217,44 @@ def ask_document(request: SearchRequest):
     )
 
     top_k = 3
-    top_indices = np.argsort(similarities)[::-1][:top_k]
+    similarity_threshold = 0.18
+
+    sorted_indices = np.argsort(similarities)[::-1][:top_k]
+
+    top_indices = [
+        index
+        for index in sorted_indices
+        if similarities[index] >= similarity_threshold
+    ]
+
+    if len(top_indices) == 0:
+        return {
+            "question": request.question,
+            "answer": "I could not find this information in the uploaded document.",
+            "filename": document_store["filename"],
+            "sources": [],
+        }
 
     retrieved_chunks = [
-        document_store["chunks"][index]
+        {
+            "text": document_store["chunks"][index],
+            "page": document_store["chunk_metadata"][index]["page"],
+        }
         for index in top_indices
     ]
 
-    context = "\n\n---\n\n".join(retrieved_chunks)
+    retrieved_chunks = [
+        {
+            "text": document_store["chunks"][index],
+            "page": document_store["chunk_metadata"][index]["page"],
+        }
+        for index in top_indices
+    ]
+
+    context = "\n\n---\n\n".join(
+        f"[Page {chunk['page']}]\n{chunk['text']}"
+        for chunk in retrieved_chunks
+    )
 
     prompt = f"""
 You are an engineering document assistant.
@@ -235,6 +281,7 @@ Question:
     for index in top_indices:
         sources.append({
             "chunk_index": int(index),
+            "page": document_store["chunk_metadata"][index]["page"],
             "similarity": float(similarities[index]),
             "text": document_store["chunks"][index],
         })
